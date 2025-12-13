@@ -88,22 +88,98 @@ jobs:
           sed -i "s/versionCode [0-9]*/versionCode ${{ github.event.inputs.version_code }}/" build.gradle
           sed -i "s/versionName \".*\"/versionName \"${{ github.event.inputs.version_name }}\"/" build.gradle
 
-      - name: Build Debug APK
+      - name: Setup signing configuration
+        working-directory: release-repo/android/app
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # Decode keystore from base64
+          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          
+          # Create keystore.properties
+          cat > keystore.properties << EOF
+          storeFile=release.keystore
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          
+          # Create Python script to add signing config
+          python3 << 'PYTHON_SCRIPT'
+          import re
+          
+          with open('build.gradle', 'r') as f:
+              content = f.read()
+          
+          # Add signing config loading before buildTypes
+          signing_config_load = '''
+          
+          // Load keystore properties for signing
+          def keystorePropertiesFile = file("keystore.properties")
+          def keystoreProperties = new Properties()
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+          }
+          '''
+          
+          # Add signingConfigs block inside android block
+          signing_configs_block = '''
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+            }
+        }
+    }
+          '''
+          
+          # Insert signing config loading before buildTypes
+          content = re.sub(
+              r'(buildTypes \{)',
+              signing_config_load + r'\1',
+              content
+          )
+          
+          # Insert signingConfigs block after namespace and before compileSdk
+          content = re.sub(
+              r'(namespace "com\.backtobalance\.welltrackplan"\n)',
+              r'\1' + signing_configs_block,
+              content
+          )
+          
+          # Add signingConfig to release buildType
+          content = re.sub(
+              r'(release \{\n            minifyEnabled false)',
+              r'\1\n            signingConfig signingConfigs.release',
+              content
+          )
+          
+          with open('build.gradle', 'w') as f:
+              f.write(content)
+          PYTHON_SCRIPT
+
+      - name: Build signed Release APK
         working-directory: release-repo/android
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
       - name: Rename APK for release
         run: |
-          cd release-repo/android/app/build/outputs/apk/debug
-          mv app-debug.apk well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
+          cd release-repo/android/app/build/outputs/apk/release
+          mv app-release.apk well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: release-repo/android/app/build/outputs/apk/debug/well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
+          name: app-release
+          path: release-repo/android/app/build/outputs/apk/release/well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
           retention-days: 30
 
       - name: Create Release
@@ -129,7 +205,7 @@ jobs:
             - This is a beta release for testing purposes
             - Report issues on Reddit or GitHub Issues
             - Version: ${{ github.event.inputs.version_name }} (Code: ${{ github.event.inputs.version_code }})
-          files: release-repo/android/app/build/outputs/apk/debug/well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
+          files: release-repo/android/app/build/outputs/apk/release/well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
           draft: false
           prerelease: true
         env:

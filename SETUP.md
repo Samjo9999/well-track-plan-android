@@ -1,13 +1,30 @@
 # Setup für signierte APK-Releases
 
-## GitHub Secrets einrichten (optional)
+## GitHub Secrets einrichten
 
 Im Repo: **Settings → Secrets and variables → Actions**
 
-**Nur nötig, wenn das Web-App-Repo privat ist:**
-- **WEB_APP_REPO_TOKEN**: GitHub Token mit Zugriff auf well-track-plan Repo
+Füge folgende Secrets hinzu:
 
-**Hinweis:** Für Debug-APKs sind keine Signing-Secrets nötig.
+1. **KEYSTORE_BASE64**: Base64-kodierter Keystore
+2. **KEYSTORE_PASSWORD**: Keystore-Passwort  
+3. **KEY_ALIAS**: `welltrackplan` (oder dein Alias)
+4. **KEY_PASSWORD**: Key-Passwort
+5. **WEB_APP_REPO_TOKEN** (optional): GitHub Token mit Zugriff auf well-track-plan Repo (nur wenn privat)
+
+## Keystore erstellen
+
+```bash
+keytool -genkey -v -keystore release.keystore -alias welltrackplan -keyalg RSA -keysize 2048 -validity 10000
+```
+
+## Keystore zu Base64 konvertieren (Windows PowerShell)
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("release.keystore")) | Set-Clipboard
+```
+
+Dann den Inhalt in das Secret `KEYSTORE_BASE64` einfügen.
 
 ## Release erstellen
 
@@ -25,7 +42,8 @@ Im Repo: **Settings → Secrets and variables → Actions**
 
 - **Version Code** muss bei jedem Release erhöht werden (1 → 2 → 3...)
 - Das Android-Projekt wird automatisch vom Web-App-Repo kopiert
-- Es wird eine **Debug-APK** gebaut (für Beta-Testing, nicht signiert)
+- Die Signierung wird automatisch über GitHub Secrets konfiguriert
+- Es wird eine **signierte Release-APK** gebaut
 - Die APK wird automatisch als `well-track-plan-beta-{version}.apk` benannt
 - Die APK wird als "Pre-release" markiert
 
