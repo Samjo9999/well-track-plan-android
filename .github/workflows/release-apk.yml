@@ -25,6 +25,7 @@ jobs:
 
       - name: Get latest version code
         id: get_version
+        working-directory: release-repo
         run: |
           # Get the latest release tag
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
