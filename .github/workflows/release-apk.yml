@@ -88,22 +88,22 @@ jobs:
           sed -i "s/versionCode [0-9]*/versionCode ${{ github.event.inputs.version_code }}/" build.gradle
           sed -i "s/versionName \".*\"/versionName \"${{ github.event.inputs.version_name }}\"/" build.gradle
 
-      - name: Build signed APK
+      - name: Build Debug APK
         working-directory: release-repo/android
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleDebug
+
+      - name: Rename APK for release
+        run: |
+          cd release-repo/android/app/build/outputs/apk/debug
+          mv app-debug.apk well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: release-repo/android/app/build/outputs/apk/release/app-release.apk
+          name: app-debug
+          path: release-repo/android/app/build/outputs/apk/debug/well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
           retention-days: 30
 
       - name: Create Release
@@ -129,7 +129,7 @@ jobs:
             - This is a beta release for testing purposes
             - Report issues on Reddit or GitHub Issues
             - Version: ${{ github.event.inputs.version_name }} (Code: ${{ github.event.inputs.version_code }})
-          files: release-repo/android/app/build/outputs/apk/release/app-release.apk
+          files: release-repo/android/app/build/outputs/apk/debug/well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
           draft: false
           prerelease: true
         env:
