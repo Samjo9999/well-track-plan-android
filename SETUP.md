@@ -32,18 +32,20 @@ Dann den Inhalt in das Secret `KEYSTORE_BASE64` einfügen.
 2. Wähle **"Build and Release APK"**
 3. Klicke **"Run workflow"**
 4. Fülle aus:
-   - **Version name**: z.B. `1.0.0`
-   - **Version code**: z.B. `1` (bei jedem Release erhöhen!)
-   - **Tag name**: z.B. `v1.0.0`
-   - **Release notes**: Beschreibung für Tester
-   - **Web app ref**: Branch/Tag/Commit vom Web-App-Repo (z.B. `main` oder `stable`)
+   - **Release notes**: (optional) Beschreibung für Tester - Standard: "Update from server"
+   - **Web app ref**: Branch/Tag/Commit vom Web-App-Repo (z.B. `main` oder `stable`) - Standard: `main`
+
+**Versionsnummern werden automatisch verwaltet:**
+- **Version Code** wird automatisch erhöht (startet bei 1, dann 2, 3, 4...)
+- **Version Name** verwendet das Datum im Format `YYYYMMDD`
+- **Tag Name** wird automatisch als `v{version_code}` erstellt
 
 ## Wichtig
 
-- **Version Code** muss bei jedem Release erhöht werden (1 → 2 → 3...)
+- Versionsnummern werden **automatisch** verwaltet - du musst sie nicht eingeben!
 - Das Android-Projekt wird automatisch vom Web-App-Repo kopiert
 - Die Signierung wird automatisch über GitHub Secrets konfiguriert
 - Es wird eine **signierte Release-APK** gebaut
-- Die APK wird automatisch als `well-track-plan-beta-{version}.apk` benannt
+- Die APK wird automatisch als `well-track-plan-beta-{date}.apk` benannt (z.B. `well-track-plan-beta-20251213.apk`)
 - Die APK wird als "Pre-release" markiert
 

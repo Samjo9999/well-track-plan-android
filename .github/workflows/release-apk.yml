@@ -3,22 +3,10 @@ name: Build and Release APK
 on:
   workflow_dispatch:
     inputs:
-      version_name:
-        description: 'Version name (e.g., 1.0.0)'
-        required: true
-        default: '1.0.0'
-      version_code:
-        description: 'Version code (incrementing number)'
-        required: true
-        default: '1'
-      tag_name:
-        description: 'Git tag name (e.g., v1.0.0)'
-        required: true
-        default: 'v1.0.0'
       release_notes:
-        description: 'Release notes'
+        description: 'Release notes (optional)'
         required: false
-        default: 'Beta release for Reddit testers'
+        default: 'Update from server'
       web_app_ref:
         description: 'Git reference (branch/tag/commit) from web app repo'
         required: true
@@ -33,6 +21,38 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: release-repo
+          fetch-depth: 0  # Fetch all history for tags
+
+      - name: Get latest version code
+        id: get_version
+        run: |
+          # Get the latest release tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LATEST_TAG" ]; then
+            # No previous releases, start with 1
+            VERSION_CODE=1
+          else
+            # Extract version code from latest tag (format: v1, v2, etc.)
+            LATEST_CODE=$(echo "$LATEST_TAG" | sed 's/v//' | sed 's/-.*//')
+            if [ -z "$LATEST_CODE" ] || [ "$LATEST_CODE" = "$LATEST_TAG" ]; then
+              # Tag format not recognized, try to find it from git tags
+              LATEST_CODE=$(git tag | grep -E '^v?[0-9]+$' | sed 's/v//' | sort -n | tail -1)
+              if [ -z "$LATEST_CODE" ]; then
+                LATEST_CODE=0
+              fi
+            fi
+            VERSION_CODE=$((LATEST_CODE + 1))
+          fi
+          
+          # Use date as version name
+          VERSION_NAME=$(date +%Y%m%d)
+          TAG_NAME="v${VERSION_CODE}"
+          
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "Using version code: $VERSION_CODE, name: $VERSION_NAME, tag: $TAG_NAME"
 
       - name: Checkout web app repo
         uses: actions/checkout@v4
@@ -85,8 +105,8 @@ jobs:
       - name: Update version in build.gradle
         working-directory: release-repo/android/app
         run: |
-          sed -i "s/versionCode [0-9]*/versionCode ${{ github.event.inputs.version_code }}/" build.gradle
-          sed -i "s/versionName \".*\"/versionName \"${{ github.event.inputs.version_name }}\"/" build.gradle
+          sed -i "s/versionCode [0-9]*/versionCode ${{ steps.get_version.outputs.version_code }}/" build.gradle
+          sed -i "s/versionName \".*\"/versionName \"${{ steps.get_version.outputs.version_name }}\"/" build.gradle
 
       - name: Setup signing configuration
         working-directory: release-repo/android/app
@@ -173,24 +193,24 @@ jobs:
       - name: Rename APK for release
         run: |
           cd release-repo/android/app/build/outputs/apk/release
-          mv app-release.apk well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
+          mv app-release.apk well-track-plan-beta-${{ steps.get_version.outputs.version_name }}.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: release-repo/android/app/build/outputs/apk/release/well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
+          path: release-repo/android/app/build/outputs/apk/release/well-track-plan-beta-${{ steps.get_version.outputs.version_name }}.apk
           retention-days: 30
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.event.inputs.tag_name }}
-          name: Release ${{ github.event.inputs.tag_name }}
+          tag_name: ${{ steps.get_version.outputs.tag_name }}
+          name: Release ${{ steps.get_version.outputs.tag_name }}
           body: |
             ## Changes in this release
             
-            ${{ github.event.inputs.release_notes }}
+            ${{ github.event.inputs.release_notes || 'Update from server' }}
             
             Built from web app commit: `${{ github.event.inputs.web_app_ref }}`
             
@@ -204,8 +224,8 @@ jobs:
             
             - This is a beta release for testing purposes
             - Report issues on Reddit or GitHub Issues
-            - Version: ${{ github.event.inputs.version_name }} (Code: ${{ github.event.inputs.version_code }})
-          files: release-repo/android/app/build/outputs/apk/release/well-track-plan-beta-${{ github.event.inputs.version_name }}.apk
+            - Version: ${{ steps.get_version.outputs.version_name }} (Code: ${{ steps.get_version.outputs.version_code }})
+          files: release-repo/android/app/build/outputs/apk/release/well-track-plan-beta-${{ steps.get_version.outputs.version_name }}.apk
           draft: false
           prerelease: true
         env:
