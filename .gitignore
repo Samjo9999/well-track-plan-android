@@ -1,0 +1,33 @@
+# Android
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+*.iml
+.gradle/
+local.properties
+*.log
+*.hprof
+captures/
+.externalNativeBuild
+.cxx/
+android/app/build/
+android/build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keystore (sollte nicht committed werden!)
+*.keystore
+*.jks
+release.keystore
+

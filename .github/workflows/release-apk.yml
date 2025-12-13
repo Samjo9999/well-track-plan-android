@@ -1,0 +1,137 @@
+name: Build and Release APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version name (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+      version_code:
+        description: 'Version code (incrementing number)'
+        required: true
+        default: '1'
+      tag_name:
+        description: 'Git tag name (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+      release_notes:
+        description: 'Release notes'
+        required: false
+        default: 'Beta release for Reddit testers'
+      web_app_ref:
+        description: 'Git reference (branch/tag/commit) from web app repo'
+        required: true
+        default: 'main'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout release repo
+        uses: actions/checkout@v4
+        with:
+          path: release-repo
+
+      - name: Checkout web app repo
+        uses: actions/checkout@v4
+        with:
+          repository: Samjo9999/well-track-plan
+          ref: ${{ github.event.inputs.web_app_ref }}
+          path: web-app
+          token: ${{ secrets.WEB_APP_REPO_TOKEN }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Build web app
+        working-directory: web-app
+        run: |
+          bun install
+          bun run build
+
+      - name: Install Capacitor CLI
+        run: |
+          npm install -g @capacitor/cli
+
+      - name: Copy Android project from web app
+        run: |
+          cp -r web-app/android release-repo/android
+
+      - name: Copy web app build to Android project
+        run: |
+          mkdir -p release-repo/android/app/src/main/assets/public
+          cp -r web-app/dist/* release-repo/android/app/src/main/assets/public/
+
+      - name: Sync Capacitor
+        working-directory: release-repo/android
+        run: |
+          npx cap sync android
+
+      - name: Update version in build.gradle
+        working-directory: release-repo/android/app
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.event.inputs.version_code }}/" build.gradle
+          sed -i "s/versionName \".*\"/versionName \"${{ github.event.inputs.version_name }}\"/" build.gradle
+
+      - name: Build signed APK
+        working-directory: release-repo/android
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: release-repo/android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 30
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.inputs.tag_name }}
+          name: Release ${{ github.event.inputs.tag_name }}
+          body: |
+            ## Changes in this release
+            
+            ${{ github.event.inputs.release_notes }}
+            
+            Built from web app commit: `${{ github.event.inputs.web_app_ref }}`
+            
+            ## Installation
+            
+            1. Download the APK file below
+            2. Enable "Install from unknown sources" in Android settings
+            3. Install the APK file
+            
+            ## Notes
+            
+            - This is a beta release for testing purposes
+            - Report issues on Reddit or GitHub Issues
+            - Version: ${{ github.event.inputs.version_name }} (Code: ${{ github.event.inputs.version_code }})
+          files: release-repo/android/app/build/outputs/apk/release/app-release.apk
+          draft: false
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
