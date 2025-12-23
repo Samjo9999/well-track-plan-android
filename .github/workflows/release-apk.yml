@@ -1,4 +1,4 @@
-name: Build and Release APK
+name: Release APK from releases folder
 
 on:
   workflow_dispatch:
@@ -7,28 +7,21 @@ on:
         description: 'Release notes (optional)'
         required: false
         default: 'Update from server'
-      web_app_ref:
-        description: 'Git reference (branch/tag/commit) from web app repo'
-        required: true
-        default: 'main'
 
 jobs:
-  build-and-release:
+  release-apk:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: read
     
     steps:
-      - name: Checkout release repo
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          path: release-repo
           fetch-depth: 0  # Fetch all history for tags
 
       - name: Get latest version code
         id: get_version
-        working-directory: release-repo
         run: |
           # Get the latest release tag
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
@@ -58,153 +51,21 @@ jobs:
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
           echo "Using version code: $VERSION_CODE, name: $VERSION_NAME, tag: $TAG_NAME"
 
-      - name: Checkout web app repo
-        uses: actions/checkout@v4
-        with:
-          repository: Samjo9999/well-track-plan
-          ref: ${{ github.event.inputs.web_app_ref }}
-          path: web-app
-          token: ${{ secrets.WEB_APP_REPO_TOKEN }}
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-
-      - name: Build web app
-        working-directory: web-app
+      - name: Find APK file
+        id: find_apk
         run: |
-          bun install
-          bun run build
-
-      - name: Install Capacitor CLI
-        run: |
-          npm install -g @capacitor/cli
-
-      - name: Copy Android project from web app
-        run: |
-          cp -r web-app/android release-repo/android
-
-      - name: Copy web app build to Android project
-        run: |
-          mkdir -p release-repo/android/app/src/main/assets/public
-          cp -r web-app/dist/* release-repo/android/app/src/main/assets/public/
-
-      - name: Sync Capacitor
-        working-directory: release-repo/android
-        run: |
-          npx cap sync android
-
-      - name: Update version in build.gradle
-        working-directory: release-repo/android/app
-        run: |
-          sed -i "s/versionCode [0-9]*/versionCode ${{ steps.get_version.outputs.version_code }}/" build.gradle
-          sed -i "s/versionName \".*\"/versionName \"${{ steps.get_version.outputs.version_name }}\"/" build.gradle
-
-      - name: Setup signing configuration
-        working-directory: release-repo/android/app
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          # Decode keystore from base64
-          echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+          # Find the main APK file (exclude backup files)
+          APK_FILE=$(find releases -name "*.apk" -not -name "*backup*" -not -name "*unsigned*" | head -1)
           
-          # Create keystore.properties
-          cat > keystore.properties << EOF
-          storeFile=release.keystore
-          storePassword=$KEYSTORE_PASSWORD
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
-          EOF
+          if [ -z "$APK_FILE" ]; then
+            echo "ERROR: No APK file found in releases/ folder!"
+            exit 1
+          fi
           
-          # Create Python script to add signing config
-          python3 << 'PYTHON_SCRIPT'
-          import re
-          
-          with open('build.gradle', 'r') as f:
-              content = f.read()
-          
-          # Add signing config loading before buildTypes
-          signing_config_load = '''
-          
-          // Load keystore properties for signing
-          def keystorePropertiesFile = file("keystore.properties")
-          def keystoreProperties = new Properties()
-          if (keystorePropertiesFile.exists()) {
-              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-          }
-          '''
-          
-          # Add signingConfigs block inside android block
-          signing_configs_block = '''
-    signingConfigs {
-        release {
-            if (keystorePropertiesFile.exists()) {
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
-                storeFile file(keystoreProperties['storeFile'])
-                storePassword keystoreProperties['storePassword']
-            }
-        }
-    }
-          '''
-          
-          # Insert signing config loading before buildTypes
-          content = re.sub(
-              r'(buildTypes \{)',
-              signing_config_load + r'\1',
-              content
-          )
-          
-          # Insert signingConfigs block after namespace and before compileSdk
-          content = re.sub(
-              r'(namespace "com\.backtobalance\.welltrackplan"\n)',
-              r'\1' + signing_configs_block,
-              content
-          )
-          
-          # Add signingConfig to release buildType
-          content = re.sub(
-              r'(release \{\n            minifyEnabled false)',
-              r'\1\n            signingConfig signingConfigs.release',
-              content
-          )
-          
-          with open('build.gradle', 'w') as f:
-              f.write(content)
-          PYTHON_SCRIPT
-
-      - name: Build signed Release APK
-        working-directory: release-repo/android
-        run: |
-          chmod +x ./gradlew
-          ./gradlew assembleRelease
-
-      - name: Rename APK for release
-        run: |
-          cd release-repo/android/app/build/outputs/apk/release
-          mv app-release.apk well-track-plan-beta-${{ steps.get_version.outputs.version_name }}.apk
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release
-          path: release-repo/android/app/build/outputs/apk/release/well-track-plan-beta-${{ steps.get_version.outputs.version_name }}.apk
-          retention-days: 30
+          APK_NAME=$(basename "$APK_FILE")
+          echo "Found APK: $APK_FILE"
+          echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
+          echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -215,8 +76,6 @@ jobs:
             ## Changes in this release
             
             ${{ github.event.inputs.release_notes || 'Update from server' }}
-            
-            Built from web app commit: `${{ github.event.inputs.web_app_ref }}`
             
             ## Installation
             
@@ -229,9 +88,8 @@ jobs:
             - This is a beta release for testing purposes
             - Report issues on Reddit or GitHub Issues
             - Version: ${{ steps.get_version.outputs.version_name }} (Code: ${{ steps.get_version.outputs.version_code }})
-          files: release-repo/android/app/build/outputs/apk/release/well-track-plan-beta-${{ steps.get_version.outputs.version_name }}.apk
+          files: ${{ steps.find_apk.outputs.apk_path }}
           draft: false
           prerelease: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
