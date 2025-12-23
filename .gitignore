@@ -1,5 +1,6 @@
 # Android
 *.apk
+!releases/*.apk
 *.ap_
 *.aab
 *.dex
@@ -30,4 +31,5 @@ Thumbs.db
 *.keystore
 *.jks
 release.keystore
+
 
