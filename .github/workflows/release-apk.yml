@@ -116,7 +116,7 @@ jobs:
           APK_PATH="${{ steps.find_apk.outputs.apk_path }}"
           APK_NAME="${{ steps.find_apk.outputs.apk_name }}"
           
-          echo "Upload URL: $UPLOAD_URL"
+          echo "Upload URL (raw): $UPLOAD_URL"
           echo "APK Path: $APK_PATH"
           echo "APK Name: $APK_NAME"
           
@@ -126,14 +126,27 @@ jobs:
             exit 1
           fi
           
-          # GitHub API requires multipart/form-data with 'label' and file
-          # URL format: upload_url?name=filename
+          # Remove template syntax from upload_url (e.g. {?name,label})
+          UPLOAD_URL_CLEAN=$(echo "$UPLOAD_URL" | sed 's/{.*}//')
+          
+          # Construct the upload URL with name parameter
+          UPLOAD_URL_FINAL="${UPLOAD_URL_CLEAN}?name=${APK_NAME}"
+          
+          echo "Upload URL (clean): $UPLOAD_URL_CLEAN"
+          echo "Upload URL (final): $UPLOAD_URL_FINAL"
+          
+          # Get file size for verification
+          FILE_SIZE=$(stat -f%z "$APK_PATH" 2>/dev/null || stat -c%s "$APK_PATH" 2>/dev/null || echo "unknown")
+          echo "File size: $FILE_SIZE bytes"
+          
+          # GitHub API requires: Content-Type: application/octet-stream with binary data
+          # Name must be in URL query parameter, not form field
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            -F "label=$APK_NAME" \
-            -F "file=@$APK_PATH" \
-            "${UPLOAD_URL}?name=${APK_NAME}")
+            -H "Content-Type: application/octet-stream" \
+            --data-binary "@$APK_PATH" \
+            "$UPLOAD_URL_FINAL")
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | head -n-1)
