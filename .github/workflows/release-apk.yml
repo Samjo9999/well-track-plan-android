@@ -111,11 +111,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload APK to Release
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ${{ steps.find_apk.outputs.apk_path }}
-          asset_name: ${{ steps.find_apk.outputs.apk_name }}
-          asset_content_type: application/vnd.android.package-archive
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary @"${{ steps.find_apk.outputs.apk_path }}" \
+            "${{ steps.create_release.outputs.upload_url }}?name=${{ steps.find_apk.outputs.apk_name }}"
