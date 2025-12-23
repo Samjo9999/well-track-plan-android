@@ -126,15 +126,14 @@ jobs:
             exit 1
           fi
           
-          # Upload using curl with multipart/form-data
-          # GitHub API requires: upload_url?name=filename
+          # GitHub API requires multipart/form-data with 'label' and file
+          # URL format: upload_url?name=filename
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            -F "name=$APK_NAME" \
             -F "label=$APK_NAME" \
-            --data-binary "@$APK_PATH" \
-            "${UPLOAD_URL}")
+            -F "file=@$APK_PATH" \
+            "${UPLOAD_URL}?name=${APK_NAME}")
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | head -n-1)
